@@ -1,0 +1,1135 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+
+# library(glmnet)
+# install.packages("caret", dep =TRUE)
+# library(caret)
+# install.packages("lmvar")
+# library("lmvar")
+
+
+
+### NON-CONFOUNDING
+###--------------LINEAR--------------------------###
+#randomized trial
+N <-1000
+
+ATE <-list(-10,-5,0.1,5,10)
+
+pi <- list(0.1,0.3,0.5,0.7,0.9)
+
+sim <- list(1000)
+tt = 1
+#matrix for storing all the results
+qmatrix = matrix(nrow =length(sim)*length(pi)*length(ATE), ncol = 78)
+
+
+
+for (a in ATE){
+  for (p in pi){
+    for (s in sim){
+      
+      #create empty objects for saving results
+      #create empty objects for saving results
+      LM_error_treat<-numeric(s)
+      LM_error_control<-numeric(s)
+      lasso_error_control<-numeric(s)
+      lasso_error_treat<-numeric(s)
+      ATE_cf_LM<-numeric(s)
+      ATE_cf_Lasso<-numeric(s)
+      ATE_cf_RF <-numeric(s)
+      Error_Lasso<-numeric(s)
+      Error_LM<-numeric(s)
+      Error_RF<-numeric(s)
+      Error_naive<- numeric(s)
+      ATE_naive2<-numeric(s)
+      treatDUMMY<-numeric(s)
+      controlDUMMY<-numeric(s)
+      
+      # fitted betas for entire dataset
+      b0<-numeric(s)
+      b1<-numeric(s)
+      b2<-numeric(s)
+      b3<-numeric(s)
+      b4<-numeric(s)
+      b5<-numeric(s)
+      
+      # fitted betas for treatment linear regression model
+      Mt0<-numeric(s)
+      Mt1<-numeric(s)
+      Mt2<-numeric(s)
+      Mt3<-numeric(s)
+      Mt4<-numeric(s)
+      
+      # fitted betas for control linear reg. model
+      Mc0<-numeric(s)
+      Mc1<-numeric(s)
+      Mc2<-numeric(s)
+      Mc3<-numeric(s)
+      Mc4<-numeric(s)
+      
+      # fitted betas for treatment lasso model
+      Lt0<-numeric(s)
+      Lt1<-numeric(s)
+      Lt2<-numeric(s)
+      Lt3<-numeric(s)
+      Lt4<-numeric(s)
+      
+      # fitted betas for control lasso model
+      Lc0<-numeric(s)
+      Lc1<-numeric(s)
+      Lc2<-numeric(s)
+      Lc3<-numeric(s)
+      Lc4<-numeric(s)    
+      
+      
+      
+      # loop through number of simulations s
+      for(i in 1:s)
+      {
+        
+        x1<-rnorm(N,50,5) # grades
+        # age
+        x2<-rnorm(N,20,2)
+        for(j in 1:N) {if(x2[j]<=18){ x2[j]<-18}}
+        # make sure there are no under aged
+        x3 <-rnorm(N,45,6) # more grades
+        x4 <-rbinom(N,size = 1,prob = 0.6) # gender
+        error<-rnorm(N,0,1)
+        # arbitrary betas
+        beta0<-0.5
+        beta1<-0.7
+        beta2<-0.5
+        beta3<-0.5
+        beta4<-0.7
+        
+        
+        #randomized trial
+        T <-rbinom(n=N,size=1,prob=p)  
+        # change prob
+        
+        #generate data using linear model
+        y<- beta0 + beta1*x1+ beta2*x2 +beta3*x3+beta4*x4+a*T + error
+        
+        
+        
+        
+        #-----------put generated data into single dataframe
+        DF<- data.frame(x1 = x1,x2=x2,x3=x3,x4=x4,T = T,y=y)
+        
+        #------------split data into treat and control
+        treatData = subset(DF, T==1)
+        treatData = treatData[c(1:4,6)]
+        controlData=subset(DF,T==0)
+        controlData = controlData[c(1:4,6)]
+        
+        #---pi is the percentage treated
+        x_pi = length(subset(x1,T==1))/N
+        
+        
+        y1 <- lm(y~.,data=DF,y=TRUE)#,x=TRUE)
+        b0[i]<-y1$coefficients[1]
+        b1[i]<-y1$coefficients[2]
+        b2[i]<-y1$coefficients[3]  
+        b3[i]<-y1$coefficients[4]
+        b4[i]<-y1$coefficients[5]
+        b5[i]<-y1$coefficients[6]
+        
+        
+        
+        
+        #--------------------LINEAR MODELS----------------------------
+        # this should produce one less beta coeff because we have split based
+        # on T = 1 or 0
+        Mt= lm(y~x1+x2+x3+x4,data=treatData,y=TRUE,x=TRUE) #fit linear model to treat data
+        Mc= lm(y~x1+x2+x3+x4,data=controlData,y=TRUE,x=TRUE)
+        
+        Mt0[i]<-Mt$coefficients[1]
+        Mt1[i]<-Mt$coefficients[2]
+        Mt2[i]<-Mt$coefficients[3]
+        Mt3[i]<-Mt$coefficients[4]
+        Mt4[i]<-Mt$coefficients[5]
+        
+        Mc0[i]<-Mc$coefficients[1]
+        Mc1[i]<-Mc$coefficients[2]
+        Mc2[i]<-Mc$coefficients[3]
+        Mc3[i]<-Mc$coefficients[4]
+        Mc4[i]<-Mc$coefficients[5]
+        
+        
+        #cross val error for the linear models
+        
+        treat_cvError =cv.lm(Mt, k=10)  #ten fold cv with Mt linear model
+        LM_error_treat[i] = treat_cvError$MSE[1]  # store MSE for this sim
+        control_cvError =cv.lm(Mc, k=10)
+        LM_error_control[i] = control_cvError$MSE[1]
+        
+        # ---------------Counterfactual Linear MOdel predictions
+        yc_c_lm <-predict.lm(Mt, newdata = controlData[1:4])  #insert control into Mt treat
+        yt_c_lm <-predict.lm(Mc, newdata = treatData[1:4]) # insert treat into Mc control
+        
+        
+        #  -------------- LASSO MODELS-------------------------------
+        grid = seq(0,1,0.01)
+        #lasso control training to get min MSE error from regularization
+        #cv.glmnet aim is to return the errors for diff lambda values
+        lasso_c <- cv.glmnet(as.matrix(controlData[1:4]),as.matrix(controlData[5]),
+                             type.measure = "mse",
+                             alpha = 1,family = "gaussian",
+                             nfolds=10)
+        
+        lasso_error_control[i] <- min(lasso_c$cvm)
+        
+        #once we get the lambda which gives min error, we insert it into the glmnet
+        # training below
+        
+        fit_c <-glmnet(as.matrix(controlData[1:4]),as.matrix(controlData[5]),
+                       family="gaussian",alpha=1,lambda=lasso_c$lambda.min, intercept = T)
+        
+        Lc0[i]<-fit_c$a0
+        Lc1[i]<-fit_c$beta[1]
+        Lc2[i]<-fit_c$beta[2]
+        Lc3[i]<-fit_c$beta[3]
+        Lc4[i]<-fit_c$beta[4]
+        
+        
+        # lasso treatment
+        lasso_t <- cv.glmnet(as.matrix(treatData[1:4]),as.matrix(treatData[5]), type.measure = "mse",
+                             alpha = 1,family = "gaussian",
+                             nfolds=10)
+        lasso_error_treat[i] <- min(lasso_t$cvm)
+        
+        fit_t <-glmnet(as.matrix(treatData[1:4]),as.matrix(treatData[5]),family="gaussian",
+                       alpha=1,lambda=lasso_t$lambda.min, intercept  = F)
+        
+        Lt0[i]<-fit_t$a0
+        Lt1[i]<-fit_t$beta[1]
+        Lt2[i]<-fit_t$beta[2]
+        Lt3[i]<-fit_t$beta[3]
+        Lt4[i]<-fit_t$beta[4]
+        
+        
+        
+        #---------------Counterfactual predictions using Lasso
+        yc_c_lasso <-predict.glmnet(fit_t, newx = as.matrix(controlData[1:4]))
+        yt_c_lasso <-predict.glmnet(fit_c, newx = as.matrix(treatData[1:4]))
+        #   
+        
+        
+        
+        ##-------------------------------  Random Forest Models
+        rf_cont <-randomForest(y~x1+x2+x3+x4,data=controlData,
+                               ntree = 1000,
+                               mtry = 4, nodesize = 5, replace = TRUE)
+        rf_treat <-randomForest(y~x1+x2+x3+x4,data=treatData,
+                                ntree = 1000, 
+                                mtry = 4, nodesize = 5, replace = TRUE)
+        
+        rf_treat_c <-predict(rf_cont, treatData[1:4])
+        rf_cont_c <- predict(rf_treat, controlData[1:4])
+        
+        ATE_RF <-x_pi*(mean(treatData$y)-mean(rf_treat_c)) +
+          (1-x_pi)*(mean(rf_cont_c)-mean(controlData$y))
+        
+        
+        
+        
+        #----------------compute ATE and Error-----------------------------
+        ATE_LM <-x_pi*(mean(treatData$y)-mean(yt_c_lm)) + (1-x_pi)*(mean(yc_c_lm)-mean(controlData$y))
+        ATE_cf_LM[i]<- ATE_LM
+        
+        ATE_Lasso <- x_pi*(mean(treatData$y)-mean(yt_c_lasso)) + (1-x_pi)*(mean(yc_c_lasso)-mean(controlData$y))
+        ATE_cf_Lasso[i]<-ATE_Lasso
+        
+        ATE_RF<-x_pi*(mean(treatData$y)-mean(rf_treat_c)) + (1-x_pi)*(mean(rf_cont_c)-mean(controlData$y))
+        ATE_cf_RF[i]<-ATE_RF
+        
+        
+        ATE_naive<- mean(treatData$y) - mean(controlData$y)
+        ATE_naive2[i] <- ATE_naive
+        
+        
+        Error_LM[i] = 100*(ATE_LM-a)/a
+        Error_Lasso[i] = 100*(ATE_Lasso-a)/a
+        Error_RF[i] = 100*(ATE_RF-a)/a
+        Error_naive[i] = 100*(ATE_naive-a)/a
+      }
+      
+      
+      lasso_error_control=as.numeric(lasso_error_control)
+      lasso_error_treat=as.numeric(lasso_error_treat)
+      LM_error_control=as.numeric(LM_error_control)
+      LM_error_treat=as.numeric(LM_error_treat)
+      
+      #naive
+      qmatrix[tt,1] = mean(ATE_naive2)
+      qmatrix[tt,2] = sd(ATE_naive2)
+      qmatrix[tt,3] = (t.test(ATE_naive2, mu=a))$p.value
+      qmatrix[tt,4] = mean(Error_naive)
+      qmatrix[tt,5] = sd(Error_naive)
+      #LM
+      qmatrix[tt,6] = mean(ATE_cf_LM)
+      qmatrix[tt,7] = sd(ATE_cf_LM)
+      qmatrix[tt,8] = (t.test(ATE_cf_LM, mu=a))$p.value
+      qmatrix[tt,9] = mean(Error_LM)
+      qmatrix[tt,10] = sd(Error_LM)
+      
+      #LAsso
+      
+      qmatrix[tt,11] = mean(ATE_cf_Lasso)
+      qmatrix[tt,12] = sd(ATE_cf_Lasso)
+      qmatrix[tt,13] = (t.test(ATE_cf_Lasso, mu=a))$p.value
+      qmatrix[tt,14] = mean(Error_Lasso)
+      qmatrix[tt,15] = sd(Error_Lasso)
+      
+      #RF
+      qmatrix[tt,16] = mean(ATE_cf_RF)
+      qmatrix[tt,17] = sd(ATE_cf_RF)
+      qmatrix[tt,18] = (t.test(ATE_cf_RF, mu=a))$p.value
+      qmatrix[tt,19] = mean(Error_RF)
+      qmatrix[tt,20] = sd(Error_RF)
+      
+      # Test Original Coefs
+      qmatrix[tt,21] = mean(b0)
+      qmatrix[tt,22] = sd(b0)
+      qmatrix[tt,23] = (t.test(b0, mu=beta0))$p.value
+      qmatrix[tt,24] = mean(b1)
+      qmatrix[tt,25] = sd(b1)
+      qmatrix[tt,26] = (t.test(b1, mu=beta1))$p.value
+      qmatrix[tt,27] = mean(b2)
+      qmatrix[tt,28] = sd(b2)
+      qmatrix[tt,29] = (t.test(b2, mu=beta2))$p.value
+      qmatrix[tt,30] = mean(b3)
+      qmatrix[tt,31] = sd(b3)
+      qmatrix[tt,32] = (t.test(b3, mu=beta3))$p.value
+      qmatrix[tt,33] = mean(b4)
+      qmatrix[tt,34] = sd(b4)
+      qmatrix[tt,35] = (t.test(b4, mu=beta4))$p.value
+      qmatrix[tt,36] = mean(b5)
+      qmatrix[tt,37] = sd(b5)
+      qmatrix[tt,38] = (t.test(b5, mu=a))$p.value
+      
+      
+      #LM Treated and Control Coefs
+      qmatrix[tt,39] = mean(Mt0)
+      qmatrix[tt,40] = sd(Mt0)
+      qmatrix[tt,41] = mean(Mt1)
+      qmatrix[tt,42] = sd(Mt1)
+      qmatrix[tt,43] = mean(Mt2)
+      qmatrix[tt,44] = sd(Mt2)
+      qmatrix[tt,45] = mean(Mt3)
+      qmatrix[tt,46] = sd(Mt3)
+      qmatrix[tt,47] = mean(Mt4)
+      qmatrix[tt,48] = sd(Mt4)
+      
+      qmatrix[tt,49] = mean(Mc0)
+      qmatrix[tt,50] = sd(Mc0)
+      qmatrix[tt,51] = mean(Mc1)
+      qmatrix[tt,52] = sd(Mc1)
+      qmatrix[tt,53] = mean(Mc2)
+      qmatrix[tt,54] = sd(Mc2)
+      qmatrix[tt,55] = mean(Mc3)
+      qmatrix[tt,56] = sd(Mc3)
+      qmatrix[tt,57] = mean(Mc4)
+      qmatrix[tt,58] = sd(Mc4)
+      
+      # Lasso Treated and Control Coefs
+      qmatrix[tt,59] = mean(Lt0)
+      qmatrix[tt,60] = sd(Lt0)
+      qmatrix[tt,61] = mean(Lt1)
+      qmatrix[tt,62] = sd(Lt1)
+      qmatrix[tt,63] = mean(Lt2)
+      qmatrix[tt,64] = sd(Lt2)
+      qmatrix[tt,65] = mean(Lt3)
+      qmatrix[tt,66] = sd(Lt3)
+      qmatrix[tt,67] = mean(Lt4, na.rm = TRUE)
+      qmatrix[tt,68] = sd(Lt4)
+      
+      qmatrix[tt,69] = mean(Lc0)
+      qmatrix[tt,70] = sd(Lc0)
+      qmatrix[tt,71] = mean(Lc1)
+      qmatrix[tt,72] = sd(Lc1)
+      qmatrix[tt,73] = mean(Lc2)
+      qmatrix[tt,74] = sd(Lc2)
+      qmatrix[tt,75] = mean(Lc3)
+      qmatrix[tt,76] = sd(Lc3)
+      qmatrix[tt,77] = mean(Lc4, na.rm = TRUE)
+      qmatrix[tt,78] = sd(Lc4)
+      
+      
+      
+      
+      tt = tt+1
+    }
+  }
+}
+
+qmatrix = data.frame(qmatrix)
+write.csv(qmatrix, file = "NonConfLinear.csv")
+
+
+```
+
+
+
+
+```{r}
+
+# library(glmnet)
+# install.packages("caret", dep =TRUE)
+# library(caret)
+# install.packages("lmvar")
+# library("lmvar")
+
+
+
+### NON-CONFOUNDING
+###--------------NON-LINEAR (squared)--------------------------###
+#randomized trial
+N <-1000
+
+ATE <-list(-10,-5,0.1,5,10)
+
+pi <- list(0.1,0.3,0.5,0.7,0.9)
+
+sim <- list(1000)
+tt = 1
+#matrix for storing all the results
+qmatrix = matrix(nrow =length(sim)*length(pi)*length(ATE), ncol = 78)
+
+
+
+for (a in ATE){
+  for (p in pi){
+    for (s in sim){
+      
+      #create empty objects for saving results
+      #create empty objects for saving results
+      LM_error_treat<-numeric(s)
+      LM_error_control<-numeric(s)
+      lasso_error_control<-numeric(s)
+      lasso_error_treat<-numeric(s)
+      ATE_cf_LM<-numeric(s)
+      ATE_cf_Lasso<-numeric(s)
+      ATE_cf_RF <-numeric(s)
+      Error_Lasso<-numeric(s)
+      Error_LM<-numeric(s)
+      Error_RF<-numeric(s)
+      Error_naive<- numeric(s)
+      ATE_naive2<-numeric(s)
+      treatDUMMY<-numeric(s)
+      controlDUMMY<-numeric(s)
+      
+      # fitted betas for entire dataset
+      b0<-numeric(s)
+      b1<-numeric(s)
+      b2<-numeric(s)
+      b3<-numeric(s)
+      b4<-numeric(s)
+      b5<-numeric(s)
+      
+      # fitted betas for treatment linear regression model
+      Mt0<-numeric(s)
+      Mt1<-numeric(s)
+      Mt2<-numeric(s)
+      Mt3<-numeric(s)
+      Mt4<-numeric(s)
+      
+      # fitted betas for control linear reg. model
+      Mc0<-numeric(s)
+      Mc1<-numeric(s)
+      Mc2<-numeric(s)
+      Mc3<-numeric(s)
+      Mc4<-numeric(s)
+      
+      # fitted betas for treatment lasso model
+      Lt0<-numeric(s)
+      Lt1<-numeric(s)
+      Lt2<-numeric(s)
+      Lt3<-numeric(s)
+      Lt4<-numeric(s)
+      
+      # fitted betas for control lasso model
+      Lc0<-numeric(s)
+      Lc1<-numeric(s)
+      Lc2<-numeric(s)
+      Lc3<-numeric(s)
+      Lc4<-numeric(s)    
+      
+      
+      
+      # loop through number of simulations s
+      for(i in 1:s)
+      {
+        
+        x1<-rnorm(N,50,5) # grades
+        # age
+        x2<-rnorm(N,20,2)
+        for(j in 1:N) {if(x2[j]<=18){ x2[j]<-18}}
+        # make sure there are no under aged
+        x3 <-rnorm(N,45,6) # more grades
+        x4 <-rbinom(N,size = 1,prob = 0.6) # gender
+        error<-rnorm(N,0,1)
+        # arbitrary betas
+        beta0<-0.5
+        beta1<-0.7
+        beta2<-0.5
+        beta3<-0.5
+        beta4<-0.7
+        
+        
+        #randomized trial
+        T <-rbinom(n=N,size=1,prob=p)  
+        # change prob
+        
+        #generate data using linear model
+        y<- beta0 + beta1*x1^2+ beta2*x2 +beta3*x3+beta4*x4+a*T + error
+        
+        
+        
+        
+        #-----------put generated data into single dataframe
+        DF<- data.frame(x1 = x1,x2=x2,x3=x3,x4=x4,T = T,y=y)
+        
+        #------------split data into treat and control
+        treatData = subset(DF, T==1)
+        treatData = treatData[c(1:4,6)]
+        controlData=subset(DF,T==0)
+        controlData = controlData[c(1:4,6)]
+        
+        #---pi is the percentage treated
+        x_pi = length(subset(x1,T==1))/N
+        
+        
+        y1 <- lm(y~.,data=DF,y=TRUE)#,x=TRUE)
+        b0[i]<-y1$coefficients[1]
+        b1[i]<-y1$coefficients[2]
+        b2[i]<-y1$coefficients[3]  
+        b3[i]<-y1$coefficients[4]
+        b4[i]<-y1$coefficients[5]
+        b5[i]<-y1$coefficients[6]
+        
+        
+        
+        
+        #--------------------LINEAR MODELS----------------------------
+        # this should produce one less beta coeff because we have split based
+        # on T = 1 or 0
+        Mt= lm(y~x1+x2+x3+x4,data=treatData,y=TRUE,x=TRUE) #fit linear model to treat data
+        Mc= lm(y~x1+x2+x3+x4,data=controlData,y=TRUE,x=TRUE)
+        
+        Mt0[i]<-Mt$coefficients[1]
+        Mt1[i]<-Mt$coefficients[2]
+        Mt2[i]<-Mt$coefficients[3]
+        Mt3[i]<-Mt$coefficients[4]
+        Mt4[i]<-Mt$coefficients[5]
+        
+        Mc0[i]<-Mc$coefficients[1]
+        Mc1[i]<-Mc$coefficients[2]
+        Mc2[i]<-Mc$coefficients[3]
+        Mc3[i]<-Mc$coefficients[4]
+        Mc4[i]<-Mc$coefficients[5]
+        
+        
+        #cross val error for the linear models
+        
+        treat_cvError =cv.lm(Mt, k=10)  #ten fold cv with Mt linear model
+        LM_error_treat[i] = treat_cvError$MSE[1]  # store MSE for this sim
+        control_cvError =cv.lm(Mc, k=10)
+        LM_error_control[i] = control_cvError$MSE[1]
+        
+        # ---------------Counterfactual Linear MOdel predictions
+        yc_c_lm <-predict.lm(Mt, newdata = controlData[1:4])  #insert control into Mt treat
+        yt_c_lm <-predict.lm(Mc, newdata = treatData[1:4]) # insert treat into Mc control
+        
+        
+        #  -------------- LASSO MODELS-------------------------------
+        grid = seq(0,1,0.01)
+        #lasso control training to get min MSE error from regularization
+        #cv.glmnet aim is to return the errors for diff lambda values
+        lasso_c <- cv.glmnet(as.matrix(controlData[1:4]),as.matrix(controlData[5]),
+                             type.measure = "mse",
+                             alpha = 1,family = "gaussian",
+                             nfolds=10)
+        
+        lasso_error_control[i] <- min(lasso_c$cvm)
+        
+        #once we get the lambda which gives min error, we insert it into the glmnet
+        # training below
+        
+        fit_c <-glmnet(as.matrix(controlData[1:4]),as.matrix(controlData[5]),
+                       family="gaussian",alpha=1,lambda=lasso_c$lambda.min, intercept = T)
+        
+        Lc0[i]<-fit_c$a0
+        Lc1[i]<-fit_c$beta[1]
+        Lc2[i]<-fit_c$beta[2]
+        Lc3[i]<-fit_c$beta[3]
+        Lc4[i]<-fit_c$beta[4]
+        
+        
+        # lasso treatment
+        lasso_t <- cv.glmnet(as.matrix(treatData[1:4]),as.matrix(treatData[5]), type.measure = "mse",
+                             alpha = 1,family = "gaussian",
+                             nfolds=10)
+        lasso_error_treat[i] <- min(lasso_t$cvm)
+        
+        fit_t <-glmnet(as.matrix(treatData[1:4]),as.matrix(treatData[5]),family="gaussian",
+                       alpha=1,lambda=lasso_t$lambda.min, intercept  = F)
+        
+        Lt0[i]<-fit_t$a0
+        Lt1[i]<-fit_t$beta[1]
+        Lt2[i]<-fit_t$beta[2]
+        Lt3[i]<-fit_t$beta[3]
+        Lt4[i]<-fit_t$beta[4]
+        
+        
+        
+        #---------------Counterfactual predictions using Lasso
+        yc_c_lasso <-predict.glmnet(fit_t, newx = as.matrix(controlData[1:4]))
+        yt_c_lasso <-predict.glmnet(fit_c, newx = as.matrix(treatData[1:4]))
+        #   
+        
+        
+        
+        ##-------------------------------  Random Forest Models
+        rf_cont <-randomForest(y~x1+x2+x3+x4,data=controlData,
+                               ntree = 1000,
+                               mtry = 4, nodesize = 5, replace = TRUE)
+        rf_treat <-randomForest(y~x1+x2+x3+x4,data=treatData,
+                                ntree = 1000, 
+                                mtry = 4, nodesize = 5, replace = TRUE)
+        
+        rf_treat_c <-predict(rf_cont, treatData[1:4])
+        rf_cont_c <- predict(rf_treat, controlData[1:4])
+        
+        ATE_RF <-x_pi*(mean(treatData$y)-mean(rf_treat_c)) +
+          (1-x_pi)*(mean(rf_cont_c)-mean(controlData$y))
+        
+        
+        
+        
+        #----------------compute ATE and Error-----------------------------
+        ATE_LM <-x_pi*(mean(treatData$y)-mean(yt_c_lm)) + (1-x_pi)*(mean(yc_c_lm)-mean(controlData$y))
+        ATE_cf_LM[i]<- ATE_LM
+        
+        ATE_Lasso <- x_pi*(mean(treatData$y)-mean(yt_c_lasso)) + (1-x_pi)*(mean(yc_c_lasso)-mean(controlData$y))
+        ATE_cf_Lasso[i]<-ATE_Lasso
+        
+        ATE_RF<-x_pi*(mean(treatData$y)-mean(rf_treat_c)) + (1-x_pi)*(mean(rf_cont_c)-mean(controlData$y))
+        ATE_cf_RF[i]<-ATE_RF
+        
+        
+        ATE_naive<- mean(treatData$y) - mean(controlData$y)
+        ATE_naive2[i] <- ATE_naive
+        
+        
+        Error_LM[i] = 100*(ATE_LM-a)/a
+        Error_Lasso[i] = 100*(ATE_Lasso-a)/a
+        Error_RF[i] = 100*(ATE_RF-a)/a
+        Error_naive[i] = 100*(ATE_naive-a)/a
+      }
+      
+      
+      lasso_error_control=as.numeric(lasso_error_control)
+      lasso_error_treat=as.numeric(lasso_error_treat)
+      LM_error_control=as.numeric(LM_error_control)
+      LM_error_treat=as.numeric(LM_error_treat)
+      
+      #naive
+      qmatrix[tt,1] = mean(ATE_naive2)
+      qmatrix[tt,2] = sd(ATE_naive2)
+      qmatrix[tt,3] = (t.test(ATE_naive2, mu=a))$p.value
+      qmatrix[tt,4] = mean(Error_naive)
+      qmatrix[tt,5] = sd(Error_naive)
+      #LM
+      qmatrix[tt,6] = mean(ATE_cf_LM)
+      qmatrix[tt,7] = sd(ATE_cf_LM)
+      qmatrix[tt,8] = (t.test(ATE_cf_LM, mu=a))$p.value
+      qmatrix[tt,9] = mean(Error_LM)
+      qmatrix[tt,10] = sd(Error_LM)
+      
+      #LAsso
+      
+      qmatrix[tt,11] = mean(ATE_cf_Lasso)
+      qmatrix[tt,12] = sd(ATE_cf_Lasso)
+      qmatrix[tt,13] = (t.test(ATE_cf_Lasso, mu=a))$p.value
+      qmatrix[tt,14] = mean(Error_Lasso)
+      qmatrix[tt,15] = sd(Error_Lasso)
+      
+      #RF
+      qmatrix[tt,16] = mean(ATE_cf_RF)
+      qmatrix[tt,17] = sd(ATE_cf_RF)
+      qmatrix[tt,18] = (t.test(ATE_cf_RF, mu=a))$p.value
+      qmatrix[tt,19] = mean(Error_RF)
+      qmatrix[tt,20] = sd(Error_RF)
+      
+      # Test Original Coefs
+      qmatrix[tt,21] = mean(b0)
+      qmatrix[tt,22] = sd(b0)
+      qmatrix[tt,23] = (t.test(b0, mu=beta0))$p.value
+      qmatrix[tt,24] = mean(b1)
+      qmatrix[tt,25] = sd(b1)
+      qmatrix[tt,26] = (t.test(b1, mu=beta1))$p.value
+      qmatrix[tt,27] = mean(b2)
+      qmatrix[tt,28] = sd(b2)
+      qmatrix[tt,29] = (t.test(b2, mu=beta2))$p.value
+      qmatrix[tt,30] = mean(b3)
+      qmatrix[tt,31] = sd(b3)
+      qmatrix[tt,32] = (t.test(b3, mu=beta3))$p.value
+      qmatrix[tt,33] = mean(b4)
+      qmatrix[tt,34] = sd(b4)
+      qmatrix[tt,35] = (t.test(b4, mu=beta4))$p.value
+      qmatrix[tt,36] = mean(b5)
+      qmatrix[tt,37] = sd(b5)
+      qmatrix[tt,38] = (t.test(b5, mu=a))$p.value
+      
+      
+      #LM Treated and Control Coefs
+      qmatrix[tt,39] = mean(Mt0)
+      qmatrix[tt,40] = sd(Mt0)
+      qmatrix[tt,41] = mean(Mt1)
+      qmatrix[tt,42] = sd(Mt1)
+      qmatrix[tt,43] = mean(Mt2)
+      qmatrix[tt,44] = sd(Mt2)
+      qmatrix[tt,45] = mean(Mt3)
+      qmatrix[tt,46] = sd(Mt3)
+      qmatrix[tt,47] = mean(Mt4)
+      qmatrix[tt,48] = sd(Mt4)
+      
+      qmatrix[tt,49] = mean(Mc0)
+      qmatrix[tt,50] = sd(Mc0)
+      qmatrix[tt,51] = mean(Mc1)
+      qmatrix[tt,52] = sd(Mc1)
+      qmatrix[tt,53] = mean(Mc2)
+      qmatrix[tt,54] = sd(Mc2)
+      qmatrix[tt,55] = mean(Mc3)
+      qmatrix[tt,56] = sd(Mc3)
+      qmatrix[tt,57] = mean(Mc4)
+      qmatrix[tt,58] = sd(Mc4)
+      
+      # Lasso Treated and Control Coefs
+      qmatrix[tt,59] = mean(Lt0)
+      qmatrix[tt,60] = sd(Lt0)
+      qmatrix[tt,61] = mean(Lt1)
+      qmatrix[tt,62] = sd(Lt1)
+      qmatrix[tt,63] = mean(Lt2)
+      qmatrix[tt,64] = sd(Lt2)
+      qmatrix[tt,65] = mean(Lt3)
+      qmatrix[tt,66] = sd(Lt3)
+      qmatrix[tt,67] = mean(Lt4, na.rm = TRUE)
+      qmatrix[tt,68] = sd(Lt4)
+      
+      qmatrix[tt,69] = mean(Lc0)
+      qmatrix[tt,70] = sd(Lc0)
+      qmatrix[tt,71] = mean(Lc1)
+      qmatrix[tt,72] = sd(Lc1)
+      qmatrix[tt,73] = mean(Lc2)
+      qmatrix[tt,74] = sd(Lc2)
+      qmatrix[tt,75] = mean(Lc3)
+      qmatrix[tt,76] = sd(Lc3)
+      qmatrix[tt,77] = mean(Lc4, na.rm = TRUE)
+      qmatrix[tt,78] = sd(Lc4)
+      
+      
+      
+      
+      tt = tt+1
+    }
+  }
+}
+
+qmatrix = data.frame(qmatrix)
+write.csv(qmatrix, file = "NonConfNonLinearSquared.csv")
+
+```
+
+
+
+
+
+
+
+```{r}
+
+# library(glmnet)
+# install.packages("caret", dep =TRUE)
+# library(caret)
+# install.packages("lmvar")
+# library("lmvar")
+
+
+
+### NON-CONFOUNDING
+###--------------NON-LINEAR (cubed)--------------------------###
+#randomized trial
+N <-1000
+
+ATE <-list(-10,-5,0.1,5,10)
+
+pi <- list(0.1,0.3,0.5,0.7,0.9)
+
+sim <- list(1000)
+tt = 1
+#matrix for storing all the results
+qmatrix = matrix(nrow =length(sim)*length(pi)*length(ATE), ncol = 78)
+
+
+
+for (a in ATE){
+  for (p in pi){
+    for (s in sim){
+      
+      #create empty objects for saving results
+      #create empty objects for saving results
+      LM_error_treat<-numeric(s)
+      LM_error_control<-numeric(s)
+      lasso_error_control<-numeric(s)
+      lasso_error_treat<-numeric(s)
+      ATE_cf_LM<-numeric(s)
+      ATE_cf_Lasso<-numeric(s)
+      ATE_cf_RF <-numeric(s)
+      Error_Lasso<-numeric(s)
+      Error_LM<-numeric(s)
+      Error_RF<-numeric(s)
+      Error_naive<- numeric(s)
+      ATE_naive2<-numeric(s)
+      treatDUMMY<-numeric(s)
+      controlDUMMY<-numeric(s)
+      
+      # fitted betas for entire dataset
+      b0<-numeric(s)
+      b1<-numeric(s)
+      b2<-numeric(s)
+      b3<-numeric(s)
+      b4<-numeric(s)
+      b5<-numeric(s)
+      
+      # fitted betas for treatment linear regression model
+      Mt0<-numeric(s)
+      Mt1<-numeric(s)
+      Mt2<-numeric(s)
+      Mt3<-numeric(s)
+      Mt4<-numeric(s)
+      
+      # fitted betas for control linear reg. model
+      Mc0<-numeric(s)
+      Mc1<-numeric(s)
+      Mc2<-numeric(s)
+      Mc3<-numeric(s)
+      Mc4<-numeric(s)
+      
+      # fitted betas for treatment lasso model
+      Lt0<-numeric(s)
+      Lt1<-numeric(s)
+      Lt2<-numeric(s)
+      Lt3<-numeric(s)
+      Lt4<-numeric(s)
+      
+      # fitted betas for control lasso model
+      Lc0<-numeric(s)
+      Lc1<-numeric(s)
+      Lc2<-numeric(s)
+      Lc3<-numeric(s)
+      Lc4<-numeric(s)    
+      
+      
+      
+      # loop through number of simulations s
+      for(i in 1:s)
+      {
+        
+        x1<-rnorm(N,50,5) # grades
+        # age
+        x2<-rnorm(N,20,2)
+        for(j in 1:N) {if(x2[j]<=18){ x2[j]<-18}}
+        # make sure there are no under aged
+        x3 <-rnorm(N,45,6) # more grades
+        x4 <-rbinom(N,size = 1,prob = 0.6) # gender
+        error<-rnorm(N,0,1)
+        # arbitrary betas
+        beta0<-0.5
+        beta1<-0.7
+        beta2<-0.5
+        beta3<-0.5
+        beta4<-0.7
+        
+        
+        #randomized trial
+        T <-rbinom(n=N,size=1,prob=p)  
+        # change prob
+        
+        #generate data using linear model
+        y<- beta0 + beta1*x1^3+ beta2*x2 +beta3*x3+beta4*x4+a*T + error
+        
+        
+        
+        
+        #-----------put generated data into single dataframe
+        DF<- data.frame(x1 = x1,x2=x2,x3=x3,x4=x4,T = T,y=y)
+        
+        #------------split data into treat and control
+        treatData = subset(DF, T==1)
+        treatData = treatData[c(1:4,6)]
+        controlData=subset(DF,T==0)
+        controlData = controlData[c(1:4,6)]
+        
+        #---pi is the percentage treated
+        x_pi = length(subset(x1,T==1))/N
+        
+        
+        y1 <- lm(y~.,data=DF,y=TRUE)#,x=TRUE)
+        b0[i]<-y1$coefficients[1]
+        b1[i]<-y1$coefficients[2]
+        b2[i]<-y1$coefficients[3]  
+        b3[i]<-y1$coefficients[4]
+        b4[i]<-y1$coefficients[5]
+        b5[i]<-y1$coefficients[6]
+        
+        
+        
+        
+        #--------------------LINEAR MODELS----------------------------
+        # this should produce one less beta coeff because we have split based
+        # on T = 1 or 0
+        Mt= lm(y~x1+x2+x3+x4,data=treatData,y=TRUE,x=TRUE) #fit linear model to treat data
+        Mc= lm(y~x1+x2+x3+x4,data=controlData,y=TRUE,x=TRUE)
+        
+        Mt0[i]<-Mt$coefficients[1]
+        Mt1[i]<-Mt$coefficients[2]
+        Mt2[i]<-Mt$coefficients[3]
+        Mt3[i]<-Mt$coefficients[4]
+        Mt4[i]<-Mt$coefficients[5]
+        
+        Mc0[i]<-Mc$coefficients[1]
+        Mc1[i]<-Mc$coefficients[2]
+        Mc2[i]<-Mc$coefficients[3]
+        Mc3[i]<-Mc$coefficients[4]
+        Mc4[i]<-Mc$coefficients[5]
+        
+        
+        #cross val error for the linear models
+        
+        treat_cvError =cv.lm(Mt, k=10)  #ten fold cv with Mt linear model
+        LM_error_treat[i] = treat_cvError$MSE[1]  # store MSE for this sim
+        control_cvError =cv.lm(Mc, k=10)
+        LM_error_control[i] = control_cvError$MSE[1]
+        
+        # ---------------Counterfactual Linear MOdel predictions
+        yc_c_lm <-predict.lm(Mt, newdata = controlData[1:4])  #insert control into Mt treat
+        yt_c_lm <-predict.lm(Mc, newdata = treatData[1:4]) # insert treat into Mc control
+        
+        
+        #  -------------- LASSO MODELS-------------------------------
+        grid = seq(0,1,0.01)
+        #lasso control training to get min MSE error from regularization
+        #cv.glmnet aim is to return the errors for diff lambda values
+        lasso_c <- cv.glmnet(as.matrix(controlData[1:4]),as.matrix(controlData[5]),
+                             type.measure = "mse",
+                             alpha = 1,family = "gaussian",
+                             nfolds=10)
+        
+        lasso_error_control[i] <- min(lasso_c$cvm)
+        
+        #once we get the lambda which gives min error, we insert it into the glmnet
+        # training below
+        
+        fit_c <-glmnet(as.matrix(controlData[1:4]),as.matrix(controlData[5]),
+                       family="gaussian",alpha=1,lambda=lasso_c$lambda.min, intercept = T)
+        
+        Lc0[i]<-fit_c$a0
+        Lc1[i]<-fit_c$beta[1]
+        Lc2[i]<-fit_c$beta[2]
+        Lc3[i]<-fit_c$beta[3]
+        Lc4[i]<-fit_c$beta[4]
+        
+        
+        # lasso treatment
+        lasso_t <- cv.glmnet(as.matrix(treatData[1:4]),as.matrix(treatData[5]), type.measure = "mse",
+                             alpha = 1,family = "gaussian",
+                             nfolds=10)
+        lasso_error_treat[i] <- min(lasso_t$cvm)
+        
+        fit_t <-glmnet(as.matrix(treatData[1:4]),as.matrix(treatData[5]),family="gaussian",
+                       alpha=1,lambda=lasso_t$lambda.min, intercept  = F)
+        
+        Lt0[i]<-fit_t$a0
+        Lt1[i]<-fit_t$beta[1]
+        Lt2[i]<-fit_t$beta[2]
+        Lt3[i]<-fit_t$beta[3]
+        Lt4[i]<-fit_t$beta[4]
+        
+        
+        
+        #---------------Counterfactual predictions using Lasso
+        yc_c_lasso <-predict.glmnet(fit_t, newx = as.matrix(controlData[1:4]))
+        yt_c_lasso <-predict.glmnet(fit_c, newx = as.matrix(treatData[1:4]))
+        #   
+        
+        
+        
+        ##-------------------------------  Random Forest Models
+        rf_cont <-randomForest(y~x1+x2+x3+x4,data=controlData,
+                               ntree = 1000,
+                               mtry = 4, nodesize = 5, replace = TRUE)
+        rf_treat <-randomForest(y~x1+x2+x3+x4,data=treatData,
+                                ntree = 1000, 
+                                mtry = 4, nodesize = 5, replace = TRUE)
+        
+        rf_treat_c <-predict(rf_cont, treatData[1:4])
+        rf_cont_c <- predict(rf_treat, controlData[1:4])
+        
+        ATE_RF <-x_pi*(mean(treatData$y)-mean(rf_treat_c)) +
+          (1-x_pi)*(mean(rf_cont_c)-mean(controlData$y))
+        
+        
+        
+        
+        #----------------compute ATE and Error-----------------------------
+        ATE_LM <-x_pi*(mean(treatData$y)-mean(yt_c_lm)) + (1-x_pi)*(mean(yc_c_lm)-mean(controlData$y))
+        ATE_cf_LM[i]<- ATE_LM
+        
+        ATE_Lasso <- x_pi*(mean(treatData$y)-mean(yt_c_lasso)) + (1-x_pi)*(mean(yc_c_lasso)-mean(controlData$y))
+        ATE_cf_Lasso[i]<-ATE_Lasso
+        
+        ATE_RF<-x_pi*(mean(treatData$y)-mean(rf_treat_c)) + (1-x_pi)*(mean(rf_cont_c)-mean(controlData$y))
+        ATE_cf_RF[i]<-ATE_RF
+        
+        
+        ATE_naive<- mean(treatData$y) - mean(controlData$y)
+        ATE_naive2[i] <- ATE_naive
+        
+        
+        Error_LM[i] = 100*(ATE_LM-a)/a
+        Error_Lasso[i] = 100*(ATE_Lasso-a)/a
+        Error_RF[i] = 100*(ATE_RF-a)/a
+        Error_naive[i] = 100*(ATE_naive-a)/a
+      }
+      
+      
+      lasso_error_control=as.numeric(lasso_error_control)
+      lasso_error_treat=as.numeric(lasso_error_treat)
+      LM_error_control=as.numeric(LM_error_control)
+      LM_error_treat=as.numeric(LM_error_treat)
+      
+      #naive
+      qmatrix[tt,1] = mean(ATE_naive2)
+      qmatrix[tt,2] = sd(ATE_naive2)
+      qmatrix[tt,3] = (t.test(ATE_naive2, mu=a))$p.value
+      qmatrix[tt,4] = mean(Error_naive)
+      qmatrix[tt,5] = sd(Error_naive)
+      #LM
+      qmatrix[tt,6] = mean(ATE_cf_LM)
+      qmatrix[tt,7] = sd(ATE_cf_LM)
+      qmatrix[tt,8] = (t.test(ATE_cf_LM, mu=a))$p.value
+      qmatrix[tt,9] = mean(Error_LM)
+      qmatrix[tt,10] = sd(Error_LM)
+      
+      #LAsso
+      
+      qmatrix[tt,11] = mean(ATE_cf_Lasso)
+      qmatrix[tt,12] = sd(ATE_cf_Lasso)
+      qmatrix[tt,13] = (t.test(ATE_cf_Lasso, mu=a))$p.value
+      qmatrix[tt,14] = mean(Error_Lasso)
+      qmatrix[tt,15] = sd(Error_Lasso)
+      
+      #RF
+      qmatrix[tt,16] = mean(ATE_cf_RF)
+      qmatrix[tt,17] = sd(ATE_cf_RF)
+      qmatrix[tt,18] = (t.test(ATE_cf_RF, mu=a))$p.value
+      qmatrix[tt,19] = mean(Error_RF)
+      qmatrix[tt,20] = sd(Error_RF)
+      
+      # Test Original Coefs
+      qmatrix[tt,21] = mean(b0)
+      qmatrix[tt,22] = sd(b0)
+      qmatrix[tt,23] = (t.test(b0, mu=beta0))$p.value
+      qmatrix[tt,24] = mean(b1)
+      qmatrix[tt,25] = sd(b1)
+      qmatrix[tt,26] = (t.test(b1, mu=beta1))$p.value
+      qmatrix[tt,27] = mean(b2)
+      qmatrix[tt,28] = sd(b2)
+      qmatrix[tt,29] = (t.test(b2, mu=beta2))$p.value
+      qmatrix[tt,30] = mean(b3)
+      qmatrix[tt,31] = sd(b3)
+      qmatrix[tt,32] = (t.test(b3, mu=beta3))$p.value
+      qmatrix[tt,33] = mean(b4)
+      qmatrix[tt,34] = sd(b4)
+      qmatrix[tt,35] = (t.test(b4, mu=beta4))$p.value
+      qmatrix[tt,36] = mean(b5)
+      qmatrix[tt,37] = sd(b5)
+      qmatrix[tt,38] = (t.test(b5, mu=a))$p.value
+      
+      
+      #LM Treated and Control Coefs
+      qmatrix[tt,39] = mean(Mt0)
+      qmatrix[tt,40] = sd(Mt0)
+      qmatrix[tt,41] = mean(Mt1)
+      qmatrix[tt,42] = sd(Mt1)
+      qmatrix[tt,43] = mean(Mt2)
+      qmatrix[tt,44] = sd(Mt2)
+      qmatrix[tt,45] = mean(Mt3)
+      qmatrix[tt,46] = sd(Mt3)
+      qmatrix[tt,47] = mean(Mt4)
+      qmatrix[tt,48] = sd(Mt4)
+      
+      qmatrix[tt,49] = mean(Mc0)
+      qmatrix[tt,50] = sd(Mc0)
+      qmatrix[tt,51] = mean(Mc1)
+      qmatrix[tt,52] = sd(Mc1)
+      qmatrix[tt,53] = mean(Mc2)
+      qmatrix[tt,54] = sd(Mc2)
+      qmatrix[tt,55] = mean(Mc3)
+      qmatrix[tt,56] = sd(Mc3)
+      qmatrix[tt,57] = mean(Mc4)
+      qmatrix[tt,58] = sd(Mc4)
+      
+      # Lasso Treated and Control Coefs
+      qmatrix[tt,59] = mean(Lt0)
+      qmatrix[tt,60] = sd(Lt0)
+      qmatrix[tt,61] = mean(Lt1)
+      qmatrix[tt,62] = sd(Lt1)
+      qmatrix[tt,63] = mean(Lt2)
+      qmatrix[tt,64] = sd(Lt2)
+      qmatrix[tt,65] = mean(Lt3)
+      qmatrix[tt,66] = sd(Lt3)
+      qmatrix[tt,67] = mean(Lt4, na.rm = TRUE)
+      qmatrix[tt,68] = sd(Lt4)
+      
+      qmatrix[tt,69] = mean(Lc0)
+      qmatrix[tt,70] = sd(Lc0)
+      qmatrix[tt,71] = mean(Lc1)
+      qmatrix[tt,72] = sd(Lc1)
+      qmatrix[tt,73] = mean(Lc2)
+      qmatrix[tt,74] = sd(Lc2)
+      qmatrix[tt,75] = mean(Lc3)
+      qmatrix[tt,76] = sd(Lc3)
+      qmatrix[tt,77] = mean(Lc4, na.rm = TRUE)
+      qmatrix[tt,78] = sd(Lc4)
+      
+      
+      
+      
+      tt = tt+1
+    }
+  }
+}
+
+qmatrix = data.frame(qmatrix)
+write.csv(qmatrix, file = "NonConfNonLinearCubed.csv")
+
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
