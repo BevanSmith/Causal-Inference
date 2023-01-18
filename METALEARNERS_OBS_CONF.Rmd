@@ -1,0 +1,1324 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+#BEGIN TLEARNER
+# TLEARNER HIDDEN CONFOUNDING
+
+
+
+
+##  idea behind hidden confounder is that in real life (data generation) we include the confounder but
+## when we test our methods, they do not see that feature in their models
+
+## 1.  data generation stays exactly the same (perhaps we should add a couple more features?)  We currently have x1, x2, x3
+## x4, x5 and T;  How about we add x6 (categorical, say bursary or no bursary) and x7 (high school grades)
+
+##2. linear model, lasso, rf all should only have access to all the features except the confounder.
+
+# 
+# 
+# # install.packages("glmnet", dep = TRUE)
+  library(glmnet)
+# # install.packages("caret", dep =TRUE)
+  library(caret)
+# # install.packages("lmvar")
+  library("lmvar")
+# # install.packages("randomForest")
+  library(randomForest)
+# # install.packages("tictoc")
+ library(tictoc)
+
+### HIDDEN-CONFOUNDING
+###--------------LINEAR--------------------------###
+#randomized trial
+N <-1000
+
+
+ATE <-list(50,10,1)
+pi <- list(0.1)
+sim <- list(500)
+
+tt = 1
+#matrix for storing all the results
+qmatrix = matrix(nrow =length(sim)*length(pi)*length(ATE), ncol = 30)
+
+tic()
+
+for (a in ATE){
+  for (p in pi){
+    for (s in sim){
+      
+      #create empty objects for saving results
+      #create empty objects for saving results
+      LM_error_treat<-numeric(s)
+      LM_error_control<-numeric(s)
+      lasso_error_control<-numeric(s)
+      lasso_error_treat<-numeric(s)
+      rf_cont_error <-numeric(s)
+      rf_treat_error<-numeric(s)
+      ATE_cf_LM<-numeric(s)
+      ATE_cf_Lasso<-numeric(s)
+      ATE_cf_RF <-numeric(s)
+      Error_Lasso<-numeric(s)
+      Error_LM<-numeric(s)
+      Error_RF<-numeric(s)
+      Error_naive<- numeric(s)
+      ATE_naive2<-numeric(s)
+      treatDUMMY<-numeric(s)
+      controlDUMMY<-numeric(s)
+      Error_regression <- numeric(s)
+      
+      # fitted betas for entire dataset
+      b0<-numeric(s)
+      b1<-numeric(s)
+      b2<-numeric(s)
+      b3<-numeric(s)
+      b4<-numeric(s)
+      b5<-numeric(s)
+      b6<-numeric(s)
+      b7<-numeric(s)
+      
+        c0<-numeric(s)
+      c1<-numeric(s)
+      c2<-numeric(s)
+      c3<-numeric(s)
+      c4<-numeric(s)
+      c5<-numeric(s)
+      c6<-numeric(s)
+      c7 <-numeric(s)
+      
+      # fitted betas for treatment linear regression model
+      Mt0<-numeric(s)
+      Mt1<-numeric(s)
+      Mt2<-numeric(s)
+      Mt3<-numeric(s)
+      Mt4<-numeric(s)
+      Mt5<-numeric(s)
+      Mt6<-numeric(s)
+      
+      
+      # fitted betas for control linear reg. model
+      Mc0<-numeric(s)
+      Mc1<-numeric(s)
+      Mc2<-numeric(s)
+      Mc3<-numeric(s)
+      Mc4<-numeric(s)
+      Mc5<-numeric(s)
+      Mc6<-numeric(s)
+      
+      
+      # fitted betas for treatment lasso model
+      Lt0<-numeric(s)
+      Lt1<-numeric(s)
+      Lt2<-numeric(s)
+      Lt3<-numeric(s)
+      Lt4<-numeric(s)
+      Lt5<-numeric(s)
+      Lt6<-numeric(s)
+      
+      
+      # fitted betas for control lasso model
+      Lc0<-numeric(s)
+      Lc1<-numeric(s)
+      Lc2<-numeric(s)
+      Lc3<-numeric(s)
+      Lc4<-numeric(s) 
+      Lc5<-numeric(s)
+      Lc6<-numeric(s)
+      
+      
+      
+      
+      # loop through number of simulations s
+      for(i in 1:s)
+      {
+        
+        #INPUT FEATURES; 6 of them
+        x1<-rnorm(N,50,5) # grades
+        x2<-rnorm(N,20,2)
+        for(j in 1:N) {if(x2[j]<=18){ x2[j]<-18}} 
+        # make sure there are no under aged
+        x3 <-rnorm(N,45,6) # more grades
+        x4 <-rbinom(N,size = 1,prob = 0.6) # gender
+        x5 <-rbinom(N,size = 1, prob = 0.3) # nsfas bursary
+        x6 <-rnorm(N,70,7) # high school maths
+        error<-rnorm(N,0,1)
+        
+        
+        #BETA COEFS
+        beta0<-0.4
+        beta1<-0.6
+        beta2<-0.4
+        beta3<-0.9
+        beta4<-0.7
+        beta5 <-0.4
+        beta6 <-0.4
+        
+        #TRUE TREATMENT EFFECT
+        ATE_true<-a
+        #x_b <-40
+        x_b <-mean(x3)[]
+        
+        
+        t = 5   #t20 u15 0.9;   t-5 u40 0.1;   t5 u10 0.5
+        u = 10
+        
+        T<-sample(c(0:1),N,replace = TRUE)
+        
+        #CONFOUNDING FEATURE x3;  x3 is a parent of both y and T
+        T<-ifelse(x3>x_b+t,0,T)
+        T<-ifelse(x3<x_b +t-u,1,T)
+        
+        
+        
+        
+        
+        
+        
+        #GENERATE THE "TRUE" DATASET
+        # 6 features and 7 coefs in the "real" data
+        y<- beta0 + beta1*x1^2+ beta2*x2 +beta3*x3 +  beta4*x4+beta5*x5 + beta6*x6 + a*T + error
+        
+        
+        
+        
+        #PUT GENERATED DATA INTO DATAFRAME
+        # 6 features and 7 coefs
+        DF<- data.frame(x1 = x1,x2=x2,x3=x3,x4=x4,x5=x5, x6=x6,T = T,y=y)
+        
+        
+        # FIT LINEAR MODEL TO DATASET TO TEST 
+        y1 <- lm(y~.,data=DF,y=TRUE)#,x=TRUE)
+        b0[i]<-y1$coefficients[1]
+        b1[i]<-y1$coefficients[2]
+        b2[i]<-y1$coefficients[3]  
+        b3[i]<-y1$coefficients[4]
+        b4[i]<-y1$coefficients[5]
+        b5[i]<-y1$coefficients[6]
+        b6[i]<-y1$coefficients[7]
+        b7[i]<-y1$coefficients[8]
+        
+        
+        
+        
+        # CONFOUNDING DATASET;  WE NOW WANT TO HIDE x3 FROM THE MODELS
+        # WE MAKE X3 A PARENT OF THE TREATMENT AND THE OUTCOME BUT NOW
+        # WE HIDE IT FROM THE MODELS
+        
+        DF_HC <- data.frame(x1 = x1,x2=x2, x3=x3,x4=x4,x5=x5, x6=x6,T = T,y=y)
+        
+        y2 <- lm(y~.,data=DF_HC,y=TRUE)#,x=TRUE)
+        c0[i]<-y2$coefficients[1]
+        c1[i]<-y2$coefficients[2]
+        c2[i]<-y2$coefficients[3]  
+        c3[i]<-y2$coefficients[4]
+        c4[i]<-y2$coefficients[5]
+        c5[i]<-y2$coefficients[6]
+        c6[i]<-y2$coefficients[7]
+        c7[i]<-y2$coefficients[8]
+        
+        
+        
+        #-----SPLIT DATA INTO TREAT AND CONTROL
+        
+        # FOR T-LEARNER AND X-LEARNER WE NEED TO SPLIT DF_HC INTO TREAT AND CONTROL DATA
+        treatData = subset(DF_HC, T==1)
+        treatData = treatData[c(1:6,8)]
+        controlData=subset(DF_HC,T==0)
+        controlData = controlData[c(1:6,8)]
+        
+        #PARTICIPATION RATE
+        x_pi = length(subset(x1,T==1))/N
+        
+        
+        
+        
+        #   T-LEARNER: LINEAR MODELS----------------------------
+        # this should produce one less beta coeff because we have split based
+        # on T = 1 or 0
+        Mt= lm(y~x1+x2+x3+x4 +x5+x6,data=treatData,y=TRUE,x=TRUE) #fit linear model to treat data
+        Mc= lm(y~x1+x2+x3+x4 +x5+x6,data=controlData,y=TRUE,x=TRUE)
+
+        Mt0[i]<-Mt$coefficients[1]
+        Mt1[i]<-Mt$coefficients[2]
+        Mt2[i]<-Mt$coefficients[3]
+        Mt3[i]<-Mt$coefficients[4]
+        Mt4[i]<-Mt$coefficients[5]
+        Mt5[i]<-Mt$coefficients[6]
+        Mt6[i]<-Mt$coefficients[7]
+
+        Mc0[i]<-Mc$coefficients[1]
+        Mc1[i]<-Mc$coefficients[2]
+        Mc2[i]<-Mc$coefficients[3]
+        Mc3[i]<-Mc$coefficients[4]
+        Mc4[i]<-Mc$coefficients[5]
+        Mc5[i]<-Mc$coefficients[6]
+        Mc6[i]<-Mc$coefficients[7]
+
+
+        #CROSS VALIDATION MSE: LINEAR MODEL
+        treat_cvError =cv.lm(Mt, k=10)  #ten fold cv with Mt linear model
+        LM_error_treat[i] = treat_cvError$MSE[1]  # store MSE for this sim
+        control_cvError =cv.lm(Mc, k=10)
+        LM_error_control[i] = control_cvError$MSE[1]
+
+
+        #NO NEED FOR COUNTERFACTUAL PREDICTIONS IN THE T LEARNER METHOD
+        # IN THE T LEARNER METHOD, WE SIMPLY FEED CONTROL DATA INTO CONTROL MODEL ETC.
+
+        yc_lm = predict.lm(Mc,newdata = DF[1:7])
+        yt_lm = predict.lm(Mt,newdata = DF[1:7])
+        
+        
+        
+        
+        # T-LEARNER: LASSO MODELS-------------------------------
+        grid = seq(0,1,0.01)
+        #lasso control training to get min MSE error from regularization
+        #cv.glmnet aim is to return the errors for diff lambda values
+        
+        lasso_c <- cv.glmnet(as.matrix(controlData[1:6]),as.matrix(controlData[7]),
+                             type.measure = "mse",
+                             alpha = 1,family = "gaussian",
+                             nfolds=10)
+        
+        lasso_error_control[i] <- min(lasso_c$cvm)
+        
+        #once we get the lambda which gives min error, we insert it into the glmnet
+        # training below
+        
+        fit_c <-glmnet(as.matrix(controlData[1:6]),as.matrix(controlData[7]),
+                       family="gaussian",alpha=1,
+                       lambda=lasso_c$lambda.min, intercept = F)
+        
+        Lc0[i]<-fit_c$a0
+        Lc1[i]<-fit_c$beta[1]
+        Lc2[i]<-fit_c$beta[2]
+        Lc3[i]<-fit_c$beta[3]
+        Lc4[i]<-fit_c$beta[4]
+        Lc5[i]<-fit_c$beta[5]
+        Lc6[i]<-fit_c$beta[6]
+        
+        # lasso treatment
+        lasso_t <- cv.glmnet(as.matrix(treatData[1:6]),as.matrix(treatData[7]), type.measure = "mse",
+                             alpha = 1,family = "gaussian",
+                             nfolds=10)
+        lasso_error_treat[i] <- min(lasso_t$cvm)
+        
+        fit_t <-glmnet(as.matrix(treatData[1:6]),as.matrix(treatData[7]),family="gaussian",
+                       alpha=1,lambda=lasso_t$lambda.min, intercept  = F)
+        
+        Lt0[i]<-fit_t$a0
+        Lt1[i]<-fit_t$beta[1]
+        Lt2[i]<-fit_t$beta[2]
+        Lt3[i]<-fit_t$beta[3]
+        Lt4[i]<-fit_t$beta[4]
+        Lt5[i]<-fit_t$beta[5]
+        Lt6[i]<-fit_t$beta[6]
+
+        
+        # TRAIN MODELS ACCORDING TO T LEARNER METHOD
+        yc_lasso <-predict.glmnet(fit_c, newx = as.matrix(DF[1:6]))
+        yt_lasso <-predict.glmnet(fit_t, newx = as.matrix(DF[1:6]))
+        
+        
+        
+        
+        ## X-LEARNER - RANDOM FOREST MODELS
+        rf_cont <-randomForest(y~x1+x2+x3+x4+x5+x6,data=controlData,
+                               ntree = 1000,
+                               mtry = 4, nodesize = 5, replace = TRUE)
+        rf_treat <-randomForest(y~x1+x2+x3+x4+x5+x6,data=treatData,
+                                ntree = 1000, 
+                                mtry = 4, nodesize = 5, replace = TRUE)
+        
+       
+        
+        
+        ## CV ERROR;  RANDOM FOREST
+        rf_cont_error[i] = mean(rf_cont$mse)
+        rf_treat_error[i] = mean(rf_treat$mse)
+        
+        
+        yc_RF <-predict(rf_cont, DF[1:7])
+        yt_RF <- predict(rf_treat, DF[1:7])
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        #----------------compute ATE and Error-----------------------------
+        ATE_LM <-    mean(yt_lm) - mean(yc_lm)
+        ATE_cf_LM[i]<- ATE_LM
+        
+        ATE_Lasso <- mean(yt_lasso) - mean(yc_lasso)
+        ATE_cf_Lasso[i]<-ATE_Lasso
+        
+        ATE_RF<-   mean(yt_RF) - mean(yc_RF)
+        ATE_cf_RF[i]<-ATE_RF
+        
+        
+        ATE_naive<- mean(treatData$y) - mean(controlData$y)
+        ATE_naive2[i] <- ATE_naive
+        
+        
+        Error_LM[i] = abs(ATE_LM-a)
+        Error_Lasso[i] = abs(ATE_Lasso-a)
+        Error_RF[i] = abs(ATE_RF-a)
+        Error_naive[i] = abs(ATE_naive-a)
+        Error_regression[i] = abs(c7[i]-a)
+      }
+      
+      
+      lasso_error_control=as.numeric(lasso_error_control)
+      lasso_error_treat=as.numeric(lasso_error_treat)
+      LM_error_control=as.numeric(LM_error_control)
+      LM_error_treat=as.numeric(LM_error_treat)
+      rf_cont_error = as.numeric(rf_cont_error)
+      rf_treat_error = as.numeric(rf_treat_error)
+      
+     
+      
+      #naive
+      qmatrix[tt,1] = mean(ATE_naive2)
+      qmatrix[tt,2] = sd(ATE_naive2)
+      qmatrix[tt,3] = (t.test(ATE_naive2, mu=a))$p.value
+      qmatrix[tt,4] = mean(Error_naive)
+      qmatrix[tt,5] = sd(Error_naive)
+      
+      #LM
+      qmatrix[tt,6] = mean(ATE_cf_LM)
+      qmatrix[tt,7] = sd(ATE_cf_LM)
+      qmatrix[tt,8] = (t.test(ATE_cf_LM, mu=a))$p.value
+      qmatrix[tt,9] = mean(Error_LM)
+      qmatrix[tt,10] = sd(Error_LM)
+      qmatrix[tt,11] = mean(LM_error_control)
+      qmatrix[tt,12] = mean(LM_error_treat)
+      #Lasso
+      
+      qmatrix[tt,13] = mean(ATE_cf_Lasso)
+      qmatrix[tt,14] = sd(ATE_cf_Lasso)
+      qmatrix[tt,15] = (t.test(ATE_cf_Lasso, mu=a))$p.value
+      qmatrix[tt,16] = mean(Error_Lasso)
+      qmatrix[tt,17] = sd(Error_Lasso)
+      qmatrix[tt,18] = mean(lasso_error_control)
+      qmatrix[tt,19] = mean(lasso_error_treat)
+      
+      #RF
+      qmatrix[tt,20] = mean(ATE_cf_RF)
+      qmatrix[tt,21] = sd(ATE_cf_RF)
+      qmatrix[tt,22] = (t.test(ATE_cf_RF, mu=a))$p.value
+      qmatrix[tt,23] = mean(Error_RF)
+      qmatrix[tt,24] = sd(Error_RF)
+      qmatrix[tt,25] = mean(rf_cont_error)
+      qmatrix[tt,26] = mean(rf_treat_error)
+      
+       # regression method
+      qmatrix[tt,27] = mean(c7)
+      qmatrix[tt,28] = sd(c7)
+      qmatrix[tt,29] = mean(Error_regression)
+      qmatrix[tt,30] = sd(Error_regression)
+      
+      
+      tt = tt+1
+    }
+  }
+}
+
+toc()
+
+qmatrix = data.frame(qmatrix)
+write.csv(qmatrix, file = "TLearnerObsConf0.5_Squared.csv")
+
+
+
+#END TLEARNER
+
+
+```
+
+
+
+
+```{r}
+
+# XLEARNER HIDDEN CONFOUNDING
+
+#BEGIN XLEARNER
+
+
+##  idea behind hidden confounder is that in real life (data generation) we include the confounder but
+## when we test our methods, they do not see that feature in their models
+
+## 1.  data generation stays exactly the same (perhaps we should add a couple more features?)  We currently have x1, x2, x3
+## x4, x5 and T;  How about we add x6 (categorical, say bursary or no bursary) and x7 (high school grades)
+
+##2. linear model, lasso, rf all should only have access to all the features except the confounder.
+
+# 
+# 
+# install.packages("glmnet", dep = TRUE)
+# library(glmnet)
+# install.packages("caret", dep =TRUE)
+# library(caret)
+# install.packages("lmvar")
+# library("lmvar")
+# install.packages("randomForest")
+# library(randomForest)
+
+
+# 
+# 
+# install.packages("tictoc")
+# library(tictoc)
+
+### HIDDEN-CONFOUNDING
+###--------------LINEAR--------------------------###
+#randomized trial
+N <-1000
+
+
+
+ATE <-list(10)
+pi <- list(1)
+sim <- list(30)
+tt = 1
+bb = 1
+#matrix for storing all the results☺
+qmatrix = matrix(nrow =length(sim)*length(pi)*length(ATE), ncol = 30)
+
+tic()
+
+for (a in ATE){
+  for (p in pi){
+    for (s in sim){
+      
+      #create empty objects for saving results
+      #create empty objects for saving results
+      LM_error_treat<-numeric(s)
+      LM_error_control<-numeric(s)
+      lasso_error_control<-numeric(s)
+      lasso_error_treat<-numeric(s)
+      rf_cont_error <-numeric(s)
+      rf_treat_error<-numeric(s)
+      ATE_cf_LM<-numeric(s)
+      ATE_cf_Lasso<-numeric(s)
+      ATE_cf_RF <-numeric(s)
+      Error_Lasso<-numeric(s)
+      Error_LM<-numeric(s)
+      Error_RF<-numeric(s)
+      Error_naive<- numeric(s)
+      Error_regression<-numeric(s)
+      ATE_naive2<-numeric(s)
+      treatDUMMY<-numeric(s)
+      controlDUMMY<-numeric(s)
+      
+      
+      # fitted betas for entire dataset
+      b0<-numeric(s)
+      b1<-numeric(s)
+      b2<-numeric(s)
+      b3<-numeric(s)
+      b4<-numeric(s)
+      b5<-numeric(s)
+      b6<-numeric(s)
+      b7<-numeric(s)
+      
+       c0<-numeric(s)
+      c1<-numeric(s)
+      c2<-numeric(s)
+      c3<-numeric(s)
+      c4<-numeric(s)
+      c5<-numeric(s)
+      c6<-numeric(s)
+      c7 <-numeric(s)
+      
+      # fitted betas for treatment linear regression model
+      Mt0<-numeric(s)
+      Mt1<-numeric(s)
+      Mt2<-numeric(s)
+      Mt3<-numeric(s)
+      Mt4<-numeric(s)
+      Mt5<-numeric(s)
+      
+      
+      # fitted betas for control linear reg. model
+      Mc0<-numeric(s)
+      Mc1<-numeric(s)
+      Mc2<-numeric(s)
+      Mc3<-numeric(s)
+      Mc4<-numeric(s)
+      Mc5<-numeric(s)
+      
+      
+      # fitted betas for treatment lasso model
+      Lt0<-numeric(s)
+      Lt1<-numeric(s)
+      Lt2<-numeric(s)
+      Lt3<-numeric(s)
+      Lt4<-numeric(s)
+      Lt5<-numeric(s)
+      
+      
+      # fitted betas for control lasso model
+      Lc0<-numeric(s)
+      Lc1<-numeric(s)
+      Lc2<-numeric(s)
+      Lc3<-numeric(s)
+      Lc4<-numeric(s) 
+      Lc5<-numeric(s)
+      
+      
+      
+      
+      # loop through number of simulations s
+      for(i in 1:s)
+      {
+        
+        #INPUT FEATURES; 6 of them
+        x1<-rnorm(N,50,5) # grades
+        x2<-rnorm(N,20,2)
+        for(j in 1:N) {if(x2[j]<=18){ x2[j]<-18}} 
+        # make sure there are no under aged
+        x3 <-rnorm(N,45,6) # more grades
+        x4 <-rbinom(N,size = 1,prob = 0.6) # gender
+        x5 <-rbinom(N,size = 1, prob = 0.3) # nsfas bursary
+        x6 <-rnorm(N,70,7) # high school maths
+        error<-rnorm(N,0,1)
+        
+        
+        #BETA COEFS
+        beta0<-0.4
+        beta1<-0.6
+        beta2<-0.4
+        beta3<-0.9
+        beta4<-0.7
+        beta5 <-0.4
+        beta6 <-0.4
+        
+        #TRUE TREATMENT EFFECT
+        ATE_true<-a
+        #x_b <-mean(x3)+dd
+        x_b <-mean(x3)
+        t = 20     #t-5 u40 0.1;   t20 u15 0.9;  t5 u10 0.5
+        u = 15
+        
+        T<-sample(c(0:1),N,replace = TRUE)
+        
+        #CONFOUNDING FEATURE x3;  x3 is a parent of both y and T
+        T<-ifelse(x3>x_b+t,0,T)
+        T<-ifelse(x3<x_b +t-u,1,T) 
+        # change prob
+        
+        
+        
+        
+        #GENERATE THE "TRUE" DATASET
+        # 6 features and 7 coefs in the "real" data
+        y<- beta0 + beta1*x1^2+ beta2*x2 +beta3*x3 +  beta4*x4+beta5*x5 + beta6*x6 + a*T^2 + error
+        
+        
+        
+        
+        #PUT GENERATED DATA INTO DATAFRAME
+        # 6 features and 7 coefs
+        DF<- data.frame(x1 = x1,x2=x2,x3=x3,x4=x4,x5=x5, x6=x6,T = T,y=y)
+        
+        
+        # FIT LINEAR MODEL TO DATASET TO TEST 
+        y1 <- lm(y~.,data=DF,y=TRUE)#,x=TRUE)
+        b0[i]<-y1$coefficients[1]
+        b1[i]<-y1$coefficients[2]
+        b2[i]<-y1$coefficients[3]  
+        b3[i]<-y1$coefficients[4]
+        b4[i]<-y1$coefficients[5]
+        b5[i]<-y1$coefficients[6]
+        b6[i]<-y1$coefficients[7]
+        b7[i]<-y1$coefficients[8]
+        
+        
+        
+        
+        # CONFOUNDING DATASET;  WE NOW WANT TO HIDE x3 FROM THE MODELS
+        # WE MAKE X3 A PARENT OF THE TREATMENT AND THE OUTCOME BUT NOW
+        # WE HIDE IT FROM THE MODELS
+        
+        DF_HC <- data.frame(x1 = x1,x2=x2,x3=x3,x4=x4,x5=x5, x6=x6,T = T,y=y)
+        
+        y2 <- lm(y~.,data=DF_HC,y=TRUE)#,x=TRUE)
+        c0[i]<-y2$coefficients[1]
+        c1[i]<-y2$coefficients[2]
+        c2[i]<-y2$coefficients[3]  
+        c3[i]<-y2$coefficients[4]
+        c4[i]<-y2$coefficients[5]
+        c5[i]<-y2$coefficients[6]
+        c6[i]<-y2$coefficients[7]
+        c7[i]<-y2$coefficients[8]
+        
+        
+        
+        #-----SPLIT DATA INTO TREAT AND CONTROL
+        
+        # FOR T-LEARNER AND X-LEARNER WE NEED TO SPLIT DF_HC INTO TREAT AND CONTROL DATA
+        treatData = subset(DF_HC, T==1)
+        treatData = treatData[c(1:6,8)]
+        controlData=subset(DF_HC,T==0)
+        controlData = controlData[c(1:6,8)]
+        
+        #PARTICIPATION RATE
+        x_pi = length(subset(x1,T==1))/N
+        length(subset(DF_HC$x1, T==1))
+        
+        
+        
+        # BEGIN WITH X-LEARNER
+        #X-LEARNER  X-LEARNER X-LEARNER X-LEARNER X-LEARNER X-LEARNER X-LEARNER
+        #X-LEARNER X-LEARNER X-LEARNER X-LEARNER X-LEARNER X-LEARNER X-LEARNER
+        
+        
+        
+        #   X-LEARNER: LINEAR MODELS----------------------------
+        # this should produce one less beta coeff because we have split based
+        # on T = 1 or 0
+        Mt= lm(y~x1+x2+x3+x4 +x5+x6,data=treatData,y=TRUE,x=TRUE) #fit linear model to treat data
+        Mc= lm(y~x1+x2+x3+x4 +x5+x6,data=controlData,y=TRUE,x=TRUE)
+        
+        Mt0[i]<-Mt$coefficients[1]
+        Mt1[i]<-Mt$coefficients[2]
+        Mt2[i]<-Mt$coefficients[3]
+        Mt3[i]<-Mt$coefficients[4]
+        Mt4[i]<-Mt$coefficients[5]
+        Mt5[i]<-Mt$coefficients[6]
+        
+        Mc0[i]<-Mc$coefficients[1]
+        Mc1[i]<-Mc$coefficients[2]
+        Mc2[i]<-Mc$coefficients[3]
+        Mc3[i]<-Mc$coefficients[4]
+        Mc4[i]<-Mc$coefficients[5]
+        Mc5[i]<-Mc$coefficients[6]
+        
+        
+        
+        #CROSS VALIDATION MSE: LINEAR MODEL
+        treat_cvError =cv.lm(Mt, k=10)  #ten fold cv with Mt linear model
+        LM_error_treat[i] = treat_cvError$MSE[1]  # store MSE for this sim
+        control_cvError =cv.lm(Mc, k=10)
+        LM_error_control[i] = control_cvError$MSE[1]
+        
+        
+        
+        # COUNTERFACTUAL PREDICTION:  LINEAR MODEL
+        yc_c_lm <-predict.lm(Mt, newdata = controlData[1:6])  #insert control into Mt treat
+        yt_c_lm <-predict.lm(Mc, newdata = treatData[1:6]) # insert treat into Mc control
+        
+        
+        # X-LEARNER: LASSO MODELS-------------------------------
+        grid = seq(0,1,0.01)
+        #lasso control training to get min MSE error from regularization
+        #cv.glmnet aim is to return the errors for diff lambda values
+        
+        lasso_c <- cv.glmnet(as.matrix(controlData[1:6]),as.matrix(controlData[7]),
+                             type.measure = "mse",
+                             alpha = 1,family = "gaussian",
+                             nfolds=10)
+        
+        lasso_error_control[i] <- min(lasso_c$cvm)
+        
+        #once we get the lambda which gives min error, we insert it into the glmnet
+        # training below
+        
+        fit_c <-glmnet(as.matrix(controlData[1:6]),as.matrix(controlData[7]),
+                       family="gaussian",alpha=1,
+                       lambda=lasso_c$lambda.min, intercept = F)
+        
+        Lc0[i]<-fit_c$a0
+        Lc1[i]<-fit_c$beta[1]
+        Lc2[i]<-fit_c$beta[2]
+        Lc3[i]<-fit_c$beta[3]
+        Lc4[i]<-fit_c$beta[4]
+        Lc4[i]<-fit_c$beta[5]
+        
+        # lasso treatment
+        lasso_t <- cv.glmnet(as.matrix(treatData[1:6]),as.matrix(treatData[7]), type.measure = "mse",
+                             alpha = 1,family = "gaussian",
+                             nfolds=10)
+        lasso_error_treat[i] <- min(lasso_t$cvm)
+        
+        fit_t <-glmnet(as.matrix(treatData[1:6]),as.matrix(treatData[7]),family="gaussian",
+                       alpha=1,lambda=lasso_t$lambda.min, intercept  = F)
+        
+        Lt0[i]<-fit_t$a0
+        Lt1[i]<-fit_t$beta[1]
+        Lt2[i]<-fit_t$beta[2]
+        Lt3[i]<-fit_t$beta[3]
+        Lt4[i]<-fit_t$beta[4]
+        Lt4[i]<-fit_t$beta[5]
+        
+      
+        
+        
+        # X-LEARNER - COUNTERFACTUAL PREDICTION: LASSO
+        yc_c_lasso <-predict.glmnet(fit_t, newx = as.matrix(controlData[1:6]))
+        yt_c_lasso <-predict.glmnet(fit_c, newx = as.matrix(treatData[1:6]))
+        #   
+        
+        
+        
+        ## X-LEARNER - RANDOM FOREST MODELS
+        rf_cont <-randomForest(y~x1+x2+x3+x4+x5+x6,data=controlData,
+                               ntree = 1000,
+                               mtry = 4, nodesize = 5, replace = TRUE)
+        rf_treat <-randomForest(y~x1+x2+x3+x4+x5+x6,data=treatData,
+                                ntree = 1000, 
+                                mtry = 4, nodesize = 5, replace = TRUE)
+        
+        rf_treat_c <-predict(rf_cont, treatData[1:6])
+        rf_cont_c <- predict(rf_treat, controlData[1:6])
+        
+        ATE_RF <-x_pi*(mean(treatData$y)-mean(rf_treat_c)) +
+          (1-x_pi)*(mean(rf_cont_c)-mean(controlData$y))
+        
+        ## CV ERROR;  RANDOM FOREST
+        rf_cont_error[i] = mean(rf_cont$mse)
+        rf_treat_error[i] = mean(rf_treat$mse)
+        
+        
+        
+        #----------------compute ATE and Error-----------------------------
+        ATE_LM <-x_pi*(mean(treatData$y)-mean(yt_c_lm)) + (1-x_pi)*(mean(yc_c_lm)-mean(controlData$y))
+        ATE_cf_LM[i]<- ATE_LM
+        
+        ATE_Lasso <- x_pi*(mean(treatData$y)-mean(yt_c_lasso)) + (1-x_pi)*(mean(yc_c_lasso)-mean(controlData$y))
+        ATE_cf_Lasso[i]<-ATE_Lasso
+        
+        ATE_RF<-x_pi*(mean(treatData$y)-mean(rf_treat_c)) + (1-x_pi)*(mean(rf_cont_c)-mean(controlData$y))
+        ATE_cf_RF[i]<-ATE_RF
+        
+        
+        ATE_naive<- mean(treatData$y) - mean(controlData$y)
+        ATE_naive2[i] <- ATE_naive
+        
+        
+        Error_LM[i] = (ATE_LM-a)^2
+        Error_Lasso[i] = (ATE_Lasso-a)^2
+        Error_RF[i] = (ATE_RF-a)^2
+        Error_naive[i] = (ATE_naive-a)^2
+        Error_regression[i] = (c7[i]-a)^2
+      }
+      
+      
+      lasso_error_control=as.numeric(lasso_error_control)
+      lasso_error_treat=as.numeric(lasso_error_treat)
+      LM_error_control=as.numeric(LM_error_control)
+      LM_error_treat=as.numeric(LM_error_treat)
+      rf_cont_error = as.numeric(rf_cont_error)
+      rf_treat_error = as.numeric(rf_treat_error)
+      
+     
+      
+      #naive
+      qmatrix[tt,1] = mean(ATE_naive2)
+      qmatrix[tt,2] = sd(ATE_naive2)
+      qmatrix[tt,3] = (t.test(ATE_naive2, mu=a))$p.value
+      qmatrix[tt,4] = mean(sum(Error_naive))
+      qmatrix[tt,5] = sd(Error_naive)
+      
+      #LM
+      qmatrix[tt,6] = mean(ATE_cf_LM)
+      qmatrix[tt,7] = sd(ATE_cf_LM)
+      qmatrix[tt,8] = (t.test(ATE_cf_LM, mu=a))$p.value
+      qmatrix[tt,9] = mean(sum(Error_LM))
+      qmatrix[tt,10] = sd(Error_LM)
+      qmatrix[tt,11] = mean(LM_error_control)
+      qmatrix[tt,12] = mean(LM_error_treat)
+      #Lasso
+      
+      qmatrix[tt,13] = mean(ATE_cf_Lasso)
+      qmatrix[tt,14] = sd(ATE_cf_Lasso)
+      qmatrix[tt,15] = (t.test(ATE_cf_Lasso, mu=a))$p.value
+      qmatrix[tt,16] = mean(sum(Error_Lasso))
+      qmatrix[tt,17] = sd(Error_Lasso)
+      qmatrix[tt,18] = mean(lasso_error_control)
+      qmatrix[tt,19] = mean(lasso_error_treat)
+      
+      #RF
+      qmatrix[tt,20] = mean(ATE_cf_RF)
+      qmatrix[tt,21] = sd(ATE_cf_RF)
+      qmatrix[tt,22] = (t.test(ATE_cf_RF, mu=a))$p.value
+      qmatrix[tt,23] = mean(sum(Error_RF))
+      qmatrix[tt,24] = sd(Error_RF)
+      qmatrix[tt,25] = mean(rf_cont_error)
+      qmatrix[tt,26] = mean(rf_treat_error)
+      
+      # regression method
+      qmatrix[tt,27] = mean(c7)
+      qmatrix[tt,28] = sd(c7)
+      qmatrix[tt,29] = (t.test(c7, mu=a))$p.value
+      qmatrix[tt,30] = sd(Error_regression)
+      
+      # 
+     
+      
+      
+      
+      
+      tt = tt+1
+    }
+  }
+  bb = bb+1
+  print(bb)
+
+
+}
+
+toc()
+
+qmatrix = data.frame(qmatrix)
+write.csv(qmatrix, file = "XLearnerObsConf0.1_NL(10).csv")
+
+#END XLEARNER
+
+
+```
+
+
+
+```{r}
+
+# 
+
+#BEGIN SLEARNER
+
+
+##  idea behind hidden confounder is that in real life (data generation) we include the confounder but
+## when we test our methods, they do not see that feature in their models
+
+## 1.  data generation stays exactly the same (perhaps we should add a couple more features?)  We currently have x1, x2, x3
+## x4, x5 and T;  How about we add x6 (categorical, say bursary or no bursary) and x7 (high school grades)
+
+##2. linear model, lasso, rf all should only have access to all the features except the confounder.
+
+# 
+# 
+# install.packages("glmnet", dep = TRUE)
+# library(glmnet)
+# install.packages("caret", dep =TRUE)
+# library(caret)
+# install.packages("lmvar")
+# library("lmvar")
+# install.packages("randomForest")
+# library(randomForest)
+# install.packages("tictoc")
+# library(tictoc)
+
+### HIDDEN-CONFOUNDING
+###--------------LINEAR--------------------------###
+#randomized trial
+N <-1000
+
+
+
+
+ATE <-list(50,10,1)
+pi <- list(0.5)
+sim <- list(500)
+tt = 1
+#matrix for storing all the results
+qmatrix = matrix(nrow =length(sim)*length(pi)*length(ATE), ncol = 30)
+
+tic()
+
+for (a in ATE){
+  for (p in pi){
+    for (s in sim){
+      
+      #create empty objects for saving results
+      #create empty objects for saving results
+      LM_error_treat<-numeric(s)
+      LM_error <-numeric(s)
+      LM_error_control<-numeric(s)
+      lasso_error_control<-numeric(s)
+      lasso_error_treat<-numeric(s)
+      rf_cont_error <-numeric(s)
+      rf_treat_error<-numeric(s)
+      ATE_cf_LM<-numeric(s)
+      ATE_cf_Lasso<-numeric(s)
+      ATE_cf_RF <-numeric(s)
+      Error_Lasso<-numeric(s)
+      Error_LM<-numeric(s)
+      Error_RF<-numeric(s)
+      Error_naive<- numeric(s)
+      Error_regression<-numeric(s)
+      ATE_naive2<-numeric(s)
+      treatDUMMY<-numeric(s)
+      controlDUMMY<-numeric(s)
+      
+      # fitted betas for entire dataset
+      b0<-numeric(s)
+      b1<-numeric(s)
+      b2<-numeric(s)
+      b3<-numeric(s)
+      b4<-numeric(s)
+      b5<-numeric(s)
+      b6 <-numeric(s)
+      b7 <-numeric(s)
+      
+       c0<-numeric(s)
+      c1<-numeric(s)
+      c2<-numeric(s)
+      c3<-numeric(s)
+      c4<-numeric(s)
+      c5<-numeric(s)
+      c6<-numeric(s)
+      c7 <-numeric(s)
+      
+      # fitted betas for treatment linear regression model
+      Mt0<-numeric(s)
+      Mt1<-numeric(s)
+      Mt2<-numeric(s)
+      Mt3<-numeric(s)
+      Mt4<-numeric(s)
+      Mt5<-numeric(s)
+      Mt6<-numeric(s)
+      
+      
+      # fitted betas for control linear reg. model
+      Mc0<-numeric(s)
+      Mc1<-numeric(s)
+      Mc2<-numeric(s)
+      Mc3<-numeric(s)
+      Mc4<-numeric(s)
+      Mc5<-numeric(s)
+      Mc6<-numeric(s)
+      
+      
+      # fitted betas for treatment lasso model
+      Lt0<-numeric(s)
+      Lt1<-numeric(s)
+      Lt2<-numeric(s)
+      Lt3<-numeric(s)
+      Lt4<-numeric(s)
+      Lt5<-numeric(s)
+      Lt6<-numeric(s)
+      
+      
+      # fitted betas for control lasso model
+      Lc0<-numeric(s)
+      Lc1<-numeric(s)
+      Lc2<-numeric(s)
+      Lc3<-numeric(s)
+      Lc4<-numeric(s) 
+      Lc5<-numeric(s)
+      Lc6<-numeric(s)
+      
+      
+      
+      
+      # loop through number of simulations s
+      for(i in 1:s)
+      {
+        
+        #INPUT FEATURES; 6 of them
+        x1<-rnorm(N,50,5) # grades
+        x2<-rnorm(N,20,2)
+        for(j in 1:N) {if(x2[j]<=18){ x2[j]<-18}} 
+        # make sure there are no under aged
+        x3 <-rnorm(N,45,6) # more grades
+        x4 <-rbinom(N,size = 1,prob = 0.6) # gender
+        x5 <-rbinom(N,size = 1, prob = 0.3) # nsfas bursary
+        x6 <-rnorm(N,70,7) # high school maths
+        error<-rnorm(N,0,1)
+        
+        
+        #BETA COEFS
+        beta0<-0.4
+        beta1<-0.6
+        beta2<-0.4
+        beta3<-0.9
+        beta4<-0.7
+        beta5 <-0.4
+        beta6 <-0.4
+        
+        #TRUE TREATMENT EFFECT
+        ATE_true<-a
+        #x_b <-mean(x3)+dd
+        x_b <-mean(x3)
+        t = 5     #t-5 u40 0.1;   t20 u15 0.9;  t5 u10 0.5
+        u = 10
+        
+        T<-sample(c(0:1),N,replace = TRUE)
+        
+        #CONFOUNDING FEATURE x3;  x3 is a parent of both y and T
+        T<-ifelse(x3>x_b+t,0,T)
+        T<-ifelse(x3<x_b+t-u,1,T) 
+        # change prob
+        
+        
+        
+        
+        #GENERATE THE "TRUE" DATASET
+        # 6 features and 7 coefs in the "real" data
+        y<- beta0 + beta1*x1+ beta2*x2 +beta3*x3 +  beta4*x4+beta5*x5 + beta6*x6 + a*T + error
+        
+        
+        
+        
+        #PUT GENERATED DATA INTO DATAFRAME
+        # 6 features and 7 coefs
+        DF<- data.frame(x1 = x1,x2=x2,x3=x3,x4=x4,x5=x5, x6=x6,T = T,y=y)
+        
+        
+        # FIT LINEAR MODEL TO DATASET TO TEST 
+        y1 <- lm(y~.,data=DF,y=TRUE)#,x=TRUE)
+        b0[i]<-y1$coefficients[1]
+        b1[i]<-y1$coefficients[2]
+        b2[i]<-y1$coefficients[3]
+        b3[i]<-y1$coefficients[4]
+        b4[i]<-y1$coefficients[5]
+        b5[i]<-y1$coefficients[6]
+        b6[i]<-y1$coefficients[7]
+        b7[i]<-y1$coefficients[8]
+        
+        
+        
+        
+        # CONFOUNDING DATASET;  WE NOW WANT TO HIDE x3 FROM THE MODELS
+        # WE MAKE X3 A PARENT OF THE TREATMENT AND THE OUTCOME BUT NOW
+        # WE HIDE IT FROM THE MODELS
+        
+        DF_HC <- data.frame(x1 = x1,x2=x2,x3=x3,x4=x4,x5=x5, x6=x6,T = T,y=y)
+        # DF_HC_NOT <- cbind(DF_HC[1:5],replicate(1000,0),DF_HC[7])
+        # DF_HC_T <-cbind(DF_HC[1:5],replicate(1000,1),DF_HC[7])
+        
+        
+        y2 <- lm(y~.,data=DF_HC,y=TRUE)#,x=TRUE)
+        c0[i]<-y2$coefficients[1]
+        c1[i]<-y2$coefficients[2]
+        c2[i]<-y2$coefficients[3]  
+        c3[i]<-y2$coefficients[4]
+        c4[i]<-y2$coefficients[5]
+        c5[i]<-y2$coefficients[6]
+        c6[i]<-y2$coefficients[7]
+        c7[i]<-y2$coefficients[8]
+        
+        #-----SPLIT DATA INTO TREAT AND CONTROL
+        
+        # FOR T-LEARNER AND X-LEARNER WE NEED TO SPLIT DF_HC INTO TREAT AND CONTROL DATA
+         treatData = replace(DF,7,1)
+        #treatData = treatData[c(1:5,7)]
+        controlData=replace(DF,7,0)
+        #controlData = controlData[c(1:5,7)]
+        
+        
+        treatData2 = subset(DF_HC, T==1)
+        treatData2 = treatData2[c(1:6,8)]
+        controlData2=subset(DF_HC,T==0)
+        controlData2 = controlData2[c(1:6,8)]
+        
+        #PARTICIPATION RATE
+        x_pi = length(subset(x1,T==1))/N
+        
+        
+        # S-LEARNER TRAINS A SINGLE MODEL ON THE ENTIRE DATASET AND THEN TO COMPUTE ATE
+        # COMPUTES THE EXPECTED OUTCOME OF THE MODEL WITH THE TREATMENT AND WITHOUT AND
+        # COMPUTES THE DIFFERENCE
+        
+        
+        
+        
+        #   S-LEARNER: LINEAR MODELS----------------------------
+        # for slearner, we only have one model trained on the data, including the T indicator
+        Mt = lm(y~x1+x2+x3+ x4 +x5+x6 +T,data=DF,y=TRUE,x=TRUE) #fit linear model to data without x3 (hidden conf.) data
+        
+        
+        Mt0[i]<-Mt$coefficients[1]
+        Mt1[i]<-Mt$coefficients[2]
+        Mt2[i]<-Mt$coefficients[3]
+        Mt3[i]<-Mt$coefficients[4]
+        Mt4[i]<-Mt$coefficients[5]
+        Mt5[i]<-Mt$coefficients[6] 
+        Mt6[i]<-Mt$coefficients[7]
+         #this is the ATE for LM
+        
+        #CROSS VALIDATION MSE: LINEAR MODEL
+        LM_cvError =cv.lm(Mt, k=10)  #ten fold cv with Mt linear model
+        LM_error[i] = LM_cvError$MSE[1]  # store MSE for this sim
+        
+        #predictions for LM
+        
+        yc_lm = predict.lm(Mt, newdata = controlData[1:7]) 
+        yt_lm = predict.lm(Mt,newdata = treatData[1:7])
+        
+        mean(yt_lm)-mean(yc_lm)
+        
+        
+        # S-LEARNER: LASSO MODELS-------------------------------
+        grid = seq(0,1,0.01)
+        #lasso control training to get min MSE error from regularization
+        #cv.glmnet aim is to return the errors for diff lambda values
+        
+        lasso <- cv.glmnet(as.matrix(DF_HC[1:7]),as.matrix(DF_HC[8]),
+                             type.measure = "mse",
+                             alpha = 1,family = "gaussian",
+                             nfolds=10)
+        
+        lasso_error_control[i] <- min(lasso$cvm)
+        
+        #once we get the lambda which gives min error, we insert it into the glmnet
+        # training below
+        
+        lasso_model <-glmnet(as.matrix(DF_HC[1:7]),as.matrix(DF_HC[8]),
+                       family="gaussian",alpha=1,
+                       lambda=lasso$lambda.min, intercept = F)
+        
+        Lc0[i]<-lasso_model$a0
+        Lc1[i]<-lasso_model$beta[1]
+        Lc2[i]<-lasso_model$beta[2]
+        Lc3[i]<-lasso_model$beta[3]
+        Lc4[i]<-lasso_model$beta[4]
+        Lc5[i]<-lasso_model$beta[5]
+        Lc6[i]<-lasso_model$beta[6]
+        
+        
+        # TRAIN MODELS ACCORDING TO S LEARNER METHOD
+        yc_lasso <-predict.glmnet(lasso_model, newx = as.matrix(controlData[1:7]))
+        yt_lasso <-predict.glmnet(lasso_model, newx = as.matrix(treatData[1:7]))
+        
+        
+        
+        ## S-LEARNER - RANDOM FOREST MODELS
+        rf_model <-randomForest(y~x1+x2+x3+x4+x5+x6+T,data=DF,
+                               ntree = 1000,
+                               mtry = 4, nodesize = 5, replace = TRUE)
+        
+        
+       
+                ## CV ERROR;  RANDOM FOREST
+        rf_cont_error[i] = mean(rf_cont$mse)
+        rf_treat_error[i] = mean(rf_treat$mse)
+        
+        #RF predictions
+        yc_RF <-predict(rf_model, controlData[1:7])
+        yt_RF <- predict(rf_model, treatData[1:7])
+        
+        
+        mean(yt_RF) - mean(yc_RF)
+        
+        
+        
+        
+        
+        
+        
+        
+        #----------------compute ATE and Error-----------------------------
+        ATE_LM <-    mean(yt_lm) - mean(yc_lm)
+        ATE_cf_LM[i]<- ATE_LM
+        
+        ATE_Lasso <- mean(yt_lasso) - mean(yc_lasso)
+        ATE_cf_Lasso[i]<-ATE_Lasso
+        
+        ATE_RF<-   mean(yt_RF) - mean(yc_RF)
+        ATE_cf_RF[i]<-ATE_RF
+        
+        
+        ATE_naive<- mean(treatData2$y) - mean(controlData2$y)
+        ATE_naive2[i] <- ATE_naive
+        
+        
+        Error_LM[i] = abs(ATE_LM-a)
+        Error_Lasso[i] = abs(ATE_Lasso-a)
+        Error_RF[i] = abs(ATE_RF-a)
+        Error_naive[i] = abs(ATE_naive-a)
+        Error_regression[i] = abs(c7[i]-a)
+      }
+      
+      
+      lasso_error_control=as.numeric(lasso_error_control)
+      lasso_error_treat=as.numeric(lasso_error_treat)
+      LM_error_control=as.numeric(LM_error_control)
+      LM_error_treat=as.numeric(LM_error_treat)
+      rf_cont_error = as.numeric(rf_cont_error)
+      rf_treat_error = as.numeric(rf_treat_error)
+      
+     
+      
+      #naive
+      qmatrix[tt,1] = mean(ATE_naive2)
+      qmatrix[tt,2] = sd(ATE_naive2)
+      qmatrix[tt,3] = (t.test(ATE_naive2, mu=a))$p.value
+      qmatrix[tt,4] = mean(Error_naive)
+      qmatrix[tt,5] = sd(Error_naive)
+      
+      #LM
+      qmatrix[tt,6] = mean(ATE_cf_LM)
+      qmatrix[tt,7] = sd(ATE_cf_LM)
+      qmatrix[tt,8] = (t.test(ATE_cf_LM, mu=a))$p.value
+      qmatrix[tt,9] = mean(Error_LM)
+      qmatrix[tt,10] = sd(Error_LM)
+      qmatrix[tt,11] = mean(LM_error_control)
+      qmatrix[tt,12] = mean(LM_error_treat)
+      #Lasso
+      
+      qmatrix[tt,13] = mean(ATE_cf_Lasso)
+      qmatrix[tt,14] = sd(ATE_cf_Lasso)
+      qmatrix[tt,15] = (t.test(ATE_cf_Lasso, mu=a))$p.value
+      qmatrix[tt,16] = mean(Error_Lasso)
+      qmatrix[tt,17] = sd(Error_Lasso)
+      qmatrix[tt,18] = mean(lasso_error_control)
+      qmatrix[tt,19] = mean(lasso_error_treat)
+      
+      #RF
+      qmatrix[tt,20] = mean(ATE_cf_RF)
+      qmatrix[tt,21] = sd(ATE_cf_RF)
+      qmatrix[tt,22] = (t.test(ATE_cf_RF, mu=a))$p.value
+      qmatrix[tt,23] = mean(Error_RF)
+      qmatrix[tt,24] = sd(Error_RF)
+      qmatrix[tt,25] = mean(rf_cont_error)
+      qmatrix[tt,26] = mean(rf_treat_error)
+      
+      # regression method
+      qmatrix[tt,27] = mean(c7)
+      qmatrix[tt,28] = sd(c7)
+      qmatrix[tt,29] = mean(Error_regression)
+      qmatrix[tt,30] = sd(Error_regression)
+      
+      
+    
+    
+    
+      
+      
+      
+      tt = tt+1
+    }
+  }
+}
+
+toc()
+
+qmatrix = data.frame(qmatrix)
+write.csv(qmatrix, file = "SLearnerObsConf0.5.csv")
+
+#END SLEARNER
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
